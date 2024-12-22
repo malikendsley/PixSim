@@ -29,6 +29,7 @@ if(MSVC)
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT PixSim)
 endif()
 
+# copy in the .dlls
 add_custom_command(TARGET PixSim POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_SOURCE_DIR}/SDL2.dll" $<TARGET_FILE_DIR:PixSim>
@@ -37,6 +38,12 @@ add_custom_command(TARGET PixSim POST_BUILD
 add_custom_command(TARGET PixSim POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_SOURCE_DIR}/SDL2_mixer.dll" $<TARGET_FILE_DIR:PixSim>
+)
+
+# copy the assets folder to the build directory
+add_custom_command(TARGET PixSim POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/assets" $<TARGET_FILE_DIR:PixSim>/assets
 )
 
 message(STATUS "Compiler: ${CMAKE_CXX_COMPILER}")

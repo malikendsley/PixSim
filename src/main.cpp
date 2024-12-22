@@ -3,6 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <numeric>
+#include <SDL_mixer.h>
 
 constexpr size_t simScale = 5; // "pixels" per sand grain. This is handled as simulation then integer scaling.
 const size_t windowHeight = 400;
@@ -10,6 +11,8 @@ const size_t windowWidth = 400;
 const int simHeight = windowHeight / simScale;
 const int simWidth = windowWidth / simScale;
 const int approxTargetFPS = 142;
+
+Mix_Chunk *sandSound = nullptr;
 
 // Function declarations (TODO: Fix this later)
 static void updateSandTexture(SDL_Texture &texture, std::unique_ptr<int[]> &sand, int scaling, int simWidth, int simHeight);
@@ -19,7 +22,18 @@ static inline int idx(int x, int y, int width);
 
 int main(int argc, char *argv[])
 {
+
 	SDL_InitSubSystem(SDL_INIT_EVERYTHING);
+	if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0)
+	{
+		printf("SDL_mixer could not initialize! SDL_mixer Error: %s\n", Mix_GetError());
+	}
+	sandSound = Mix_LoadWAV("assets/sand.wav");
+	if (sandSound == nullptr)
+	{
+		std::cerr << "Failed to load sound: " << Mix_GetError() << std::endl;
+	}
+
 	SDL_Window *window = SDL_CreateWindow("title", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, windowHeight, windowWidth, SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS);
 	SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
@@ -72,7 +86,17 @@ int main(int argc, char *argv[])
 		SDL_RenderPresent(renderer);
 
 		// Step the sim
-		auto moved = simulateSand(sand);
+		if (simulateSand(sand))
+		{
+			if (Mix_Playing(0) == 0)
+			{
+				Mix_PlayChannel(0, sandSound, -1);
+			}
+		}
+		else
+		{
+			Mix_HaltChannel(0);
+		}
 
 		simTick++;
 

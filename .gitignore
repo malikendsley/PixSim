@@ -1,0 +1,5 @@
+# ignore bin and build directories
+bin/
+build/
+# ignore vscode settings
+.vscode/

@@ -4,7 +4,6 @@
 #include <vector>
 #include <numeric>
 #include <SDL_mixer.h>
-#include <vector>
 #include <functional>
 
 constexpr size_t simScale = 10; // "pixels" per sim grain. This is handled as simulation then integer scaling.

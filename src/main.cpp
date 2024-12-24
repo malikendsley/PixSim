@@ -18,7 +18,7 @@ const int approxTargetFPS = 142;
 Mix_Chunk *sandSound = nullptr;
 
 // Function declarations (TODO: Fix this later)
-static void updateSandTexture(SDL_Texture &texture, std::unique_ptr<int[]> &sim, int scaling, int simWidth, int simHeight);
+static void draw(SDL_Texture &texture, std::unique_ptr<int[]> &sim, int scaling, int simWidth, int simHeight);
 static void updateUI(SDL_Texture &texture, int scaling, long long frame);
 static void simulateFalling(int x, int y, std::unique_ptr<int[]> &sim, int width = simWidth, int height = simHeight);
 static inline int idx(int x, int y, int width);
@@ -43,8 +43,11 @@ int main(int argc, char *argv[])
 	SDL_Texture *screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, windowWidth, windowHeight);
 
 	std::vector<std::function<void(int, int, std::unique_ptr<int[]> &, int, int)>> passes = {
-		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // no-op pass
-		simulateFalling,
+		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // Air
+		simulateFalling,									 // Sand, falls down
+		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // Stone, doesn't move. Blocks sand (though no code is needed for that)
+		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // TODO: Water, flows down
+		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // TODO: Gas, rises up
 	};
 
 	auto sim = std::make_unique<int[]>(simHeight * simWidth);
@@ -70,6 +73,7 @@ int main(int argc, char *argv[])
 
 	enum simTile
 	{
+		air,
 		sand,
 		stone,
 		water,
@@ -122,7 +126,7 @@ int main(int argc, char *argv[])
 			// spawn the held tile at the mouse position (currently just sand)
 			if (mouseX >= 0 && mouseX < windowWidth && mouseY >= 0 && mouseY < windowHeight)
 			{
-				sim[(mouseY / simScale) * simWidth + (mouseX / simScale)] = 1;
+				sim[(mouseY / simScale) * simWidth + (mouseX / simScale)] = currentTile;
 			}
 		}
 
@@ -156,7 +160,7 @@ int main(int argc, char *argv[])
 		// The beginnings of a rendering pipeline
 
 		// Update Textures
-		updateSandTexture(*screenTexture, sim, simScale, simWidth, simHeight);
+		draw(*screenTexture, sim, simScale, simWidth, simHeight);
 		updateUI(*screenTexture, simScale, simTick);
 
 		// Draw the texture
@@ -241,7 +245,15 @@ static void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, int widt
 	}
 }
 
-static void updateSandTexture(SDL_Texture &texture, std::unique_ptr<int[]> &sand, int scaling, int simWidth, int simHeight)
+auto colors = std::vector<uint32_t>{
+	0x00000000, // Air
+	0xFFC26480, // Sand
+	0xF0F0F080, // Stone
+	0xA00FF00,	// Water
+	0x00FF00FF, // Gas
+};
+
+static void draw(SDL_Texture &texture, std::unique_ptr<int[]> &grid, int scaling, int simWidth, int simHeight)
 {
 	void *pixels;
 	int pitch;
@@ -257,10 +269,7 @@ static void updateSandTexture(SDL_Texture &texture, std::unique_ptr<int[]> &sand
 	{
 		for (int simX = 0; simX < simWidth; simX++)
 		{
-			uint32_t color = (sand[(simY * simWidth) + simX] == 1)
-								 ? 0xFFC2B280  // Precomputed RGBA value for light brown
-								 : 0x00000000; // Precomputed RGBA value for black
-
+			uint32_t color = colors[grid[simY * simWidth + simX]];
 			// Write directly into the texture, accounting for scaling
 			for (int dy = 0; dy < scaling; dy++)
 			{

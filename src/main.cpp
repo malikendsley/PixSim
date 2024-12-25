@@ -206,27 +206,26 @@ static void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, int widt
 		grid[(y + 1) * width + x] = 1;
 		moved = true;
 	}
+	// we can only move diagonally if the sides are empty (can't clip through 1-thick walls)
 	else
 	{
-		// If the pixel below is not empty, pick a random direction and move the grain there, if possible
-		int direction = rand() % 2;
-		if (direction == 0)
+		// Randomly choose left or right
+		int dir = rand() % 2 == 0 ? -1 : 1;
+		// Check if the chosen direction is empty
+		if (x + dir >= 0 && x + dir < width && grid[(y + 1) * width + x + dir] == 0)
 		{
-			// Move the grain to the left
-			if (x > 0 && grid[(y + 1) * width + (x - 1)] == 0)
-			{
-				grid[y * width + x] = 0;
-				grid[(y + 1) * width + (x - 1)] = 1;
-				moved = true;
-			}
+			grid[y * width + x] = 0;
+			grid[(y + 1) * width + x + dir] = 1;
+			moved = true;
 		}
 		else
 		{
-			// Move the grain to the right
-			if (x < width - 1 && grid[(y + 1) * width + (x + 1)] == 0)
+			// If the chosen direction is not empty, try the other direction
+			dir = -dir;
+			if (x + dir >= 0 && x + dir < width && grid[(y + 1) * width + x + dir] == 0)
 			{
 				grid[y * width + x] = 0;
-				grid[(y + 1) * width + (x + 1)] = 1;
+				grid[(y + 1) * width + x + dir] = 1;
 				moved = true;
 			}
 		}

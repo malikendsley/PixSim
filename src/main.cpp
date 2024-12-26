@@ -5,6 +5,7 @@
 #include <numeric>
 #include <SDL_mixer.h>
 #include <functional>
+#include "input.h"
 
 constexpr size_t simScale = 10; // "pixels" per sim grain. This is handled as simulation then integer scaling.
 const size_t windowHeight = 800;
@@ -50,26 +51,13 @@ int main(int argc, char *argv[])
 		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // TODO: Gas, rises up
 	};
 
+	InputHandler inputHandler;
+
 	auto sim = std::make_unique<int[]>(simHeight * simWidth);
 
 	bool running = true;
-	SDL_Event event;
 	auto lastTime = SDL_GetPerformanceCounter();
 	auto simTick = 0;
-
-	// TODO: Struct this hoe
-	auto mouseX = 0;
-	auto mouseY = 0;
-
-	struct keyDownState
-	{
-		bool lmb = false;
-		bool oneKey = false;
-		bool twoKey = false;
-		bool threeKey = false;
-		bool fourKey = false;
-		bool cKey = false;
-	};
 
 	enum simTile
 	{
@@ -83,50 +71,17 @@ int main(int argc, char *argv[])
 
 	while (running)
 	{
-
-		// Alternative is to declare this outside
-		keyDownState input;
-		// Process events
-		while (SDL_PollEvent(&event))
+		auto input = inputHandler.getInputState();
+		if (input.quit)
 		{
-			if (event.type == SDL_QUIT)
-			{
-				std::cout << "Quitting" << std::endl;
-				running = false;
-			}
-			// populate the struct with the current state of the keys
-			if (event.type == SDL_KEYDOWN)
-			{
-				switch (event.key.keysym.sym)
-				{
-				case SDLK_1:
-					input.oneKey = true;
-					break;
-				case SDLK_2:
-					input.twoKey = true;
-					break;
-				case SDLK_3:
-					input.threeKey = true;
-					break;
-				case SDLK_4:
-					input.fourKey = true;
-					break;
-				case SDLK_c:
-					input.cKey = true;
-					break;
-				}
-			}
+			running = false;
 		}
-
-		// Handle mouse input
-		auto click = SDL_GetMouseState(&mouseX, &mouseY);
-		input.lmb = click & SDL_BUTTON(SDL_BUTTON_LEFT);
 		if (input.lmb)
 		{
 			// spawn the held tile at the mouse position (currently just sand)
-			if (mouseX >= 0 && mouseX < windowWidth && mouseY >= 0 && mouseY < windowHeight)
+			if (input.mouseX >= 0 && input.mouseX < windowWidth && input.mouseY >= 0 && input.mouseY < windowHeight)
 			{
-				sim[(mouseY / simScale) * simWidth + (mouseX / simScale)] = currentTile;
+				sim[(input.mouseY / simScale) * simWidth + (input.mouseX / simScale)] = currentTile;
 			}
 		}
 
@@ -209,10 +164,10 @@ static void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, int widt
 	// we can only move diagonally if the sides are empty (can't clip through 1-thick walls)
 	else
 	{
-		// Randomly choose left or right
+		// TODO: Extract this to one function
 		int dir = rand() % 2 == 0 ? -1 : 1;
 		// Check if the chosen direction is empty
-		if (x + dir >= 0 && x + dir < width && grid[(y + 1) * width + x + dir] == 0)
+		if (x + dir >= 0 && x + dir < width && grid[(y + 1) * width + x + dir] == 0 && grid[y * width + x + dir] == 0)
 		{
 			grid[y * width + x] = 0;
 			grid[(y + 1) * width + x + dir] = 1;
@@ -220,9 +175,8 @@ static void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, int widt
 		}
 		else
 		{
-			// If the chosen direction is not empty, try the other direction
 			dir = -dir;
-			if (x + dir >= 0 && x + dir < width && grid[(y + 1) * width + x + dir] == 0)
+			if (x + dir >= 0 && x + dir < width && grid[(y + 1) * width + x + dir] == 0 && grid[y * width + x + dir] == 0)
 			{
 				grid[y * width + x] = 0;
 				grid[(y + 1) * width + x + dir] = 1;

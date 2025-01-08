@@ -53,7 +53,10 @@ int main(int argc, char *argv[])
 
 	InputHandler inputHandler;
 
-	auto sim = std::make_unique<int[]>(simHeight * simWidth);
+	// Entries here correspond to what tile is at each position in the simulation grid
+	auto tileTypeBuffer = std::make_unique<int[]>(simHeight * simWidth);
+	// Entries here correspond to the flow of each tile in the simulation grid
+	auto flowBuffer = std::make_unique<int[]>(simHeight * simWidth);
 
 	bool running = true;
 	auto lastTime = SDL_GetPerformanceCounter();
@@ -81,7 +84,7 @@ int main(int argc, char *argv[])
 			// spawn the held tile at the mouse position (currently just sand)
 			if (input.mouseX >= 0 && input.mouseX < windowWidth && input.mouseY >= 0 && input.mouseY < windowHeight)
 			{
-				sim[(input.mouseY / simScale) * simWidth + (input.mouseX / simScale)] = currentTile;
+				tileTypeBuffer[(input.mouseY / simScale) * simWidth + (input.mouseX / simScale)] = currentTile;
 			}
 		}
 
@@ -108,14 +111,14 @@ int main(int argc, char *argv[])
 		}
 		if (input.cKey)
 		{
-			std::fill(sim.get(), sim.get() + simHeight * simWidth, 0);
+			std::fill(tileTypeBuffer.get(), tileTypeBuffer.get() + simHeight * simWidth, 0);
 			std::cout << "Cleared the simulation" << std::endl;
 		}
 
 		// The beginnings of a rendering pipeline
 
 		// Update Textures
-		draw(*screenTexture, sim, simScale, simWidth, simHeight);
+		draw(*screenTexture, tileTypeBuffer, simScale, simWidth, simHeight);
 		updateUI(*screenTexture, simScale, simTick);
 
 		// Draw the texture
@@ -127,7 +130,7 @@ int main(int argc, char *argv[])
 		{
 			for (int x = 0; x < simWidth; x++)
 			{
-				passes[sim[y * simWidth + x]](x, y, sim, simWidth, simHeight);
+				passes[tileTypeBuffer[y * simWidth + x]](x, y, tileTypeBuffer, simWidth, simHeight);
 			}
 		}
 		simTick++;
@@ -195,6 +198,98 @@ static void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, int widt
 	else
 	{
 		Mix_HaltChannel(0);
+	}
+}
+
+// Water is unique in that it has to flow and settle
+// Volume preservation
+static void volumePreservation(std::unique_ptr<int[]> &tileBuffer, std::unique_ptr<int[]> &flowBuffer, int width, int height, int tileType)
+{
+	// NOTE: i think that later, i will handle each body of water as a separate entity (with some way to altenatively handle small bits of water)
+	//  For now, I will handle all water in the chunk in one pass
+
+	// The flow buffer is the same size as the tile buffer, implicitly encoding the position of excess water and making the amount the value
+	// For all water tiles, if flowBuffer[x, y] > 0, move the water to the nearest empty tile with a lower pressure (value in tileBuffer)
+	// Prioritizing closest and downwards bias should give the most natural looking flow
+	for (int y = 0; y < height; y++)
+	{
+		// x on the inner loop to improve cache locality
+		for (int x = 0; x < width; x++)
+		{
+			if (tileBuffer[y * width + x] == tileType && flowBuffer[y * width + x] > 0)
+			{
+				// Find the nearest empty tile with a lower pressure
+				// Start with the tile below
+				if (y + 1 < height && tileBuffer[(y + 1) * width + x] == 0)
+				{
+					tileBuffer[y * width + x] = 0;
+					tileBuffer[(y + 1) * width + x] = tileType;
+					flowBuffer[y * width + x]--;
+					flowBuffer[(y + 1) * width + x]++;
+				}
+				else
+				{
+					// If the tile below is occupied, check the sides
+					if (x - 1 >= 0 && tileBuffer[y * width + x - 1] == 0)
+					{
+						tileBuffer[y * width + x] = 0;
+						tileBuffer[y * width + x - 1] = tileType;
+						flowBuffer[y * width + x]--;
+						flowBuffer[y * width + x - 1]++;
+					}
+					else if (x + 1 < width && tileBuffer[y * width + x + 1] == 0)
+					{
+						tileBuffer[y * width + x] = 0;
+						tileBuffer[y * width + x + 1] = tileType;
+						flowBuffer[y * width + x]--;
+						flowBuffer[y * width + x + 1]++;
+					}
+				}
+			}
+		}
+	}
+}
+
+// Flowing can be handled in the same pass as every other particle
+static void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, std::unique_ptr<int[]> &flowBuffer, int width, int height, int tileType)
+{
+	// shortcut: check sides, if both occupied, return
+	// NOTE: If bugs with water, remove or investigate this shortcut
+	if (tileBuffer[y * width + x - 1] != 0 && tileBuffer[y * width + x + 1] != 0)
+	{
+		return;
+	}
+
+	// check below
+	if (tileBuffer[(y + 1) * width + x] == 0)
+	{
+		tileBuffer[y * width + x] = 0;
+		tileBuffer[(y + 1) * width + x] = tileType;
+		return;
+	}
+
+	auto side = rand() % 2 == 0 ? -1 : 1;
+	auto distance = 1;
+
+	while (true)
+	{
+		if (x + side * distance < 0 || x + side * distance >= width)
+		{
+			return;
+		}
+
+		if (tileBuffer[(y + 1) * width + x + side * distance] == 0)
+		{
+			tileBuffer[y * width + x] = 0;
+			tileBuffer[(y + 1) * width + x + side * distance] = tileType;
+			return;
+		}
+
+		if (tileBuffer[(y + 1) * width + x + side * distance] != 0)
+		{
+			side = -side;
+			distance++;
+		}
 	}
 }
 

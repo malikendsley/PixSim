@@ -21,7 +21,8 @@ Mix_Chunk *sandSound = nullptr;
 // Function declarations (TODO: Fix this later)
 static void draw(SDL_Texture &texture, std::unique_ptr<int[]> &sim, int scaling, int simWidth, int simHeight);
 static void updateUI(SDL_Texture &texture, int scaling, long long frame);
-static void simulateFalling(int x, int y, std::unique_ptr<int[]> &sim, int width = simWidth, int height = simHeight);
+static void simulateFalling(int x, int y, std::unique_ptr<int[]> &sim, std::unique_ptr<int[]> &_, int width = simWidth, int height = simHeight);
+static void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, std::unique_ptr<int[]> &flowBuffer, int width = simWidth, int height = simHeight);
 static inline int idx(int x, int y, int width);
 
 int main(int argc, char *argv[])
@@ -43,12 +44,13 @@ int main(int argc, char *argv[])
 
 	SDL_Texture *screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, windowWidth, windowHeight);
 
-	std::vector<std::function<void(int, int, std::unique_ptr<int[]> &, int, int)>> passes = {
-		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // Air
-		simulateFalling,									 // Sand, falls down
-		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // Stone, doesn't move. Blocks sand (though no code is needed for that)
-		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // TODO: Water, flows down
-		[](int, int, std::unique_ptr<int[]> &, int, int) {}, // TODO: Gas, rises up
+	// TODO: Fix this mess, i won't be able to use the same sig for every pass
+	std::vector<std::function<void(int, int, std::unique_ptr<int[]> &, std::unique_ptr<int[]> &, int, int)>> passes = {
+		[](int, int, std::unique_ptr<int[]> &, std::unique_ptr<int[]> &, int, int) {}, // Air
+		simulateFalling,															   // Sand, falls down
+		[](int, int, std::unique_ptr<int[]> &, std::unique_ptr<int[]> &, int, int) {}, // Stone, doesn't move. Blocks sand (though no code is needed for that)
+		simulateFlowing,
+		[](int, int, std::unique_ptr<int[]> &, std::unique_ptr<int[]> &, int, int) {}, // TODO: Gas, rises up
 	};
 
 	InputHandler inputHandler;
@@ -130,7 +132,7 @@ int main(int argc, char *argv[])
 		{
 			for (int x = 0; x < simWidth; x++)
 			{
-				passes[tileTypeBuffer[y * simWidth + x]](x, y, tileTypeBuffer, simWidth, simHeight);
+				passes[tileTypeBuffer[y * simWidth + x]](x, y, tileTypeBuffer, flowBuffer, simWidth, simHeight);
 			}
 		}
 		simTick++;
@@ -149,7 +151,7 @@ int main(int argc, char *argv[])
 }
 
 // Right now sand's only behavior is to fall, but later on, we will have different types of particles
-static void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, int width, int height)
+static void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, std::unique_ptr<int[]> &_, int width, int height)
 {
 	// TODO: Just for fun, remove later
 	auto moved = false;
@@ -251,16 +253,19 @@ static void volumePreservation(std::unique_ptr<int[]> &tileBuffer, std::unique_p
 }
 
 // Flowing can be handled in the same pass as every other particle
-static void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, std::unique_ptr<int[]> &flowBuffer, int width, int height, int tileType)
+// Assumes the coordinates contain flowable particle
+static void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, std::unique_ptr<int[]> &flowBuffer, int width, int height)
 {
-	// shortcut: check sides, if both occupied, return
+	int tileType = tileBuffer[y * width + x];
+
+	// Shortcut: check sides, if both occupied, return
 	// NOTE: If bugs with water, remove or investigate this shortcut
 	if (tileBuffer[y * width + x - 1] != 0 && tileBuffer[y * width + x + 1] != 0)
 	{
 		return;
 	}
 
-	// check below
+	// Check below
 	if (tileBuffer[(y + 1) * width + x] == 0)
 	{
 		tileBuffer[y * width + x] = 0;
@@ -273,7 +278,9 @@ static void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, st
 
 	while (true)
 	{
-		if (x + side * distance < 0 || x + side * distance >= width)
+		// TODO: Replace this with some sort of bitmask
+		if (x + side * distance < 0 || x + side * distance >= width ||
+			tileBuffer[y * width + x + side * distance] == 1 || tileBuffer[y * width + x + side * distance] == 2)
 		{
 			return;
 		}
@@ -287,12 +294,15 @@ static void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, st
 
 		if (tileBuffer[(y + 1) * width + x + side * distance] != 0)
 		{
+			// Only increment every other loop
 			side = -side;
-			distance++;
+			if (side == 1)
+			{
+				distance++;
+			}
 		}
 	}
 }
-
 auto colors = std::vector<uint32_t>{
 	0x00000000, // Air
 	0xFFC26480, // Sand

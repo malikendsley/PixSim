@@ -14,7 +14,7 @@ const size_t windowWidth = 800;
 // TODO: Eventually, we will parallelize on chunks, so make it parametric on height and width
 const int simHeight = windowHeight / simScale;
 const int simWidth = windowWidth / simScale;
-const int approxTargetFPS = 142;
+const int approxTargetFPS = 10;
 
 Mix_Chunk *sandSound = nullptr;
 
@@ -258,51 +258,40 @@ static void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, st
 {
 	int tileType = tileBuffer[y * width + x];
 
-	// Shortcut: check sides, if both occupied, return
-	// NOTE: If bugs with water, remove or investigate this shortcut
-	if (tileBuffer[y * width + x - 1] != 0 && tileBuffer[y * width + x + 1] != 0)
-	{
-		return;
-	}
-
-	// Check below
-	if (tileBuffer[(y + 1) * width + x] == 0)
+	// Check below, below left, and below right
+	// Don't go outside of edge of the screen
+	if (y + 1 < height && tileBuffer[(y + 1) * width + x] == 0)
 	{
 		tileBuffer[y * width + x] = 0;
 		tileBuffer[(y + 1) * width + x] = tileType;
 		return;
 	}
+	int rand = std::rand() % 2 == 0 ? -1 : 1;
 
-	auto side = rand() % 2 == 0 ? -1 : 1;
-	auto distance = 1;
-
-	while (true)
+	if (y + 1 < height && x + rand >= 0 && x + rand < width && tileBuffer[(y + 1) * width + x + rand] == 0)
 	{
-		// TODO: Replace this with some sort of bitmask
-		if (x + side * distance < 0 || x + side * distance >= width ||
-			tileBuffer[y * width + x + side * distance] == 1 || tileBuffer[y * width + x + side * distance] == 2)
-		{
-			return;
-		}
+		tileBuffer[y * width + x] = 0;
+		tileBuffer[(y + 1) * width + x + rand] = tileType;
+		return;
+	}
 
-		if (tileBuffer[(y + 1) * width + x + side * distance] == 0)
-		{
-			tileBuffer[y * width + x] = 0;
-			tileBuffer[(y + 1) * width + x + side * distance] = tileType;
-			return;
-		}
+	if (y + 1 < height && x - rand >= 0 && x - rand < width && tileBuffer[(y + 1) * width + x - rand] == 0)
+	{
+		tileBuffer[y * width + x] = 0;
+		tileBuffer[(y + 1) * width + x - rand] = tileType;
+		return;
+	}
 
-		if (tileBuffer[(y + 1) * width + x + side * distance] != 0)
-		{
-			// Only increment every other loop
-			side = -side;
-			if (side == 1)
-			{
-				distance++;
-			}
-		}
+	// If we can't flow down, we have to flow sideways
+	rand = std::rand() % 2 == 0 ? -1 : 1;
+	if (x + rand >= 0 && x + rand < width && tileBuffer[y * width + x + rand] == 0)
+	{
+		tileBuffer[y * width + x] = 0;
+		tileBuffer[y * width + x + rand] = tileType;
+		return;
 	}
 }
+
 auto colors = std::vector<uint32_t>{
 	0x00000000, // Air
 	0xFFC26480, // Sand

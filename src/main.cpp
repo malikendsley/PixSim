@@ -5,24 +5,21 @@
 #include <numeric>
 #include <SDL_mixer.h>
 #include <functional>
-#include "input.h"
 
-constexpr size_t simScale = 10; // "pixels" per sim grain. This is handled as simulation then integer scaling.
-const size_t windowHeight = 800;
-const size_t windowWidth = 800;
+#include "input.h"
+#include "sim_behaviors.h"
+
+constexpr size_t simScale = 1; // "pixels" per sim grain. This is handled as simulation then integer scaling.
+constexpr size_t windowHeight = 800;
+constexpr size_t windowWidth = 800;
 
 // TODO: Eventually, we will parallelize on chunks, so make it parametric on height and width
-const int simHeight = windowHeight / simScale;
-const int simWidth = windowWidth / simScale;
-const int approxTargetFPS = 10;
+constexpr int simHeight = windowHeight / simScale;
+constexpr int simWidth = windowWidth / simScale;
+constexpr int approxTargetFPS = 0;
 
-Mix_Chunk *sandSound = nullptr;
-
-// Function declarations (TODO: Fix this later)
 static void draw(SDL_Texture &texture, std::unique_ptr<int[]> &sim, int scaling, int simWidth, int simHeight);
 static void updateUI(SDL_Texture &texture, int scaling, long long frame);
-static void simulateFalling(int x, int y, std::unique_ptr<int[]> &sim, std::unique_ptr<int[]> &_, int width = simWidth, int height = simHeight);
-static void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, std::unique_ptr<int[]> &flowBuffer, int width = simWidth, int height = simHeight);
 static inline int idx(int x, int y, int width);
 
 int main(int argc, char *argv[])
@@ -33,25 +30,11 @@ int main(int argc, char *argv[])
 	{
 		printf("SDL_mixer could not initialize! SDL_mixer Error: %s\n", Mix_GetError());
 	}
-	sandSound = Mix_LoadWAV("assets/sand.wav");
-	if (sandSound == nullptr)
-	{
-		std::cerr << "Failed to load sound: " << Mix_GetError() << std::endl;
-	}
 
 	SDL_Window *window = SDL_CreateWindow("title", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, windowHeight, windowWidth, SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS);
 	SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
 	SDL_Texture *screenTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, windowWidth, windowHeight);
-
-	// TODO: Fix this mess, i won't be able to use the same sig for every pass
-	std::vector<std::function<void(int, int, std::unique_ptr<int[]> &, std::unique_ptr<int[]> &, int, int)>> passes = {
-		[](int, int, std::unique_ptr<int[]> &, std::unique_ptr<int[]> &, int, int) {}, // Air
-		simulateFalling,															   // Sand, falls down
-		[](int, int, std::unique_ptr<int[]> &, std::unique_ptr<int[]> &, int, int) {}, // Stone, doesn't move. Blocks sand (though no code is needed for that)
-		simulateFlowing,
-		[](int, int, std::unique_ptr<int[]> &, std::unique_ptr<int[]> &, int, int) {}, // TODO: Gas, rises up
-	};
 
 	InputHandler inputHandler;
 
@@ -59,6 +42,8 @@ int main(int argc, char *argv[])
 	auto tileTypeBuffer = std::make_unique<int[]>(simHeight * simWidth);
 	// Entries here correspond to the flow of each tile in the simulation grid
 	auto flowBuffer = std::make_unique<int[]>(simHeight * simWidth);
+	// This buffer indicates which tiles have already been processed in the current frame
+	auto processedBuffer = std::make_unique<int[]>(simHeight * simWidth);
 
 	bool running = true;
 	auto lastTime = SDL_GetPerformanceCounter();
@@ -132,14 +117,29 @@ int main(int argc, char *argv[])
 		{
 			for (int x = 0; x < simWidth; x++)
 			{
-				passes[tileTypeBuffer[y * simWidth + x]](x, y, tileTypeBuffer, flowBuffer, simWidth, simHeight);
+				auto idx = y * simWidth + x;
+				switch (tileTypeBuffer[idx])
+				{
+				case sand:
+					simulateFalling(x, y, tileTypeBuffer, flowBuffer, simWidth, simHeight);
+					break;
+				case water:
+					simulateFlowing(x, y, tileTypeBuffer, flowBuffer, processedBuffer, simWidth, simHeight);
+					break;
+				case gas:
+					// simulateFlowing(x, y, tileTypeBuffer, flowBuffer, tileTypeBuffer, simWidth, simHeight);
+					break;
+				}
 			}
 		}
 		simTick++;
+		// Reset the processed buffer
+		std::fill_n(processedBuffer.get(), simHeight * simWidth, 0);
 
 		// TODO: I will need to properly accumulate time up to this point for true framerate,
 		// but to wait for 1 / targetFPS, I will get roughly the right time
-		SDL_Delay(1000 / approxTargetFPS);
+		if constexpr (approxTargetFPS)
+			SDL_Delay(1000 / approxTargetFPS);
 	}
 
 	SDL_DestroyTexture(screenTexture);
@@ -148,59 +148,6 @@ int main(int argc, char *argv[])
 	SDL_Quit();
 
 	return 0;
-}
-
-// Right now sand's only behavior is to fall, but later on, we will have different types of particles
-static void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, std::unique_ptr<int[]> &_, int width, int height)
-{
-	// TODO: Just for fun, remove later
-	auto moved = false;
-
-	// Sand collides with the bottom of the screen
-	if (y == height - 1)
-		return;
-	// Sand tries to fall down
-	if (grid[(y + 1) * width + x] == 0)
-	{
-		grid[y * width + x] = 0;
-		grid[(y + 1) * width + x] = 1;
-		moved = true;
-	}
-	// we can only move diagonally if the sides are empty (can't clip through 1-thick walls)
-	else
-	{
-		// TODO: Extract this to one function
-		int dir = rand() % 2 == 0 ? -1 : 1;
-		// Check if the chosen direction is empty
-		if (x + dir >= 0 && x + dir < width && grid[(y + 1) * width + x + dir] == 0 && grid[y * width + x + dir] == 0)
-		{
-			grid[y * width + x] = 0;
-			grid[(y + 1) * width + x + dir] = 1;
-			moved = true;
-		}
-		else
-		{
-			dir = -dir;
-			if (x + dir >= 0 && x + dir < width && grid[(y + 1) * width + x + dir] == 0 && grid[y * width + x + dir] == 0)
-			{
-				grid[y * width + x] = 0;
-				grid[(y + 1) * width + x + dir] = 1;
-				moved = true;
-			}
-		}
-	}
-
-	if (moved)
-	{
-		if (Mix_Playing(0) == 0)
-		{
-			Mix_PlayChannel(0, sandSound, -1);
-		}
-	}
-	else
-	{
-		Mix_HaltChannel(0);
-	}
 }
 
 // Water is unique in that it has to flow and settle
@@ -252,46 +199,6 @@ static void volumePreservation(std::unique_ptr<int[]> &tileBuffer, std::unique_p
 	}
 }
 
-// Flowing can be handled in the same pass as every other particle
-// Assumes the coordinates contain flowable particle
-static void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, std::unique_ptr<int[]> &flowBuffer, int width, int height)
-{
-	int tileType = tileBuffer[y * width + x];
-
-	// Check below, below left, and below right
-	// Don't go outside of edge of the screen
-	if (y + 1 < height && tileBuffer[(y + 1) * width + x] == 0)
-	{
-		tileBuffer[y * width + x] = 0;
-		tileBuffer[(y + 1) * width + x] = tileType;
-		return;
-	}
-	int rand = std::rand() % 2 == 0 ? -1 : 1;
-
-	if (y + 1 < height && x + rand >= 0 && x + rand < width && tileBuffer[(y + 1) * width + x + rand] == 0)
-	{
-		tileBuffer[y * width + x] = 0;
-		tileBuffer[(y + 1) * width + x + rand] = tileType;
-		return;
-	}
-
-	if (y + 1 < height && x - rand >= 0 && x - rand < width && tileBuffer[(y + 1) * width + x - rand] == 0)
-	{
-		tileBuffer[y * width + x] = 0;
-		tileBuffer[(y + 1) * width + x - rand] = tileType;
-		return;
-	}
-
-	// If we can't flow down, we have to flow sideways
-	rand = std::rand() % 2 == 0 ? -1 : 1;
-	if (x + rand >= 0 && x + rand < width && tileBuffer[y * width + x + rand] == 0)
-	{
-		tileBuffer[y * width + x] = 0;
-		tileBuffer[y * width + x + rand] = tileType;
-		return;
-	}
-}
-
 auto colors = std::vector<uint32_t>{
 	0x00000000, // Air
 	0xFFC26480, // Sand
@@ -305,24 +212,37 @@ static void draw(SDL_Texture &texture, std::unique_ptr<int[]> &grid, int scaling
 	void *pixels;
 	int pitch;
 
-	// Create intermediate buffer for the colored pixels prior to upscaling
-	auto intermediateBuffer = std::make_unique<int[]>(simWidth * simHeight);
-
 	SDL_LockTexture(&texture, nullptr, &pixels, &pitch);
 
 	uint32_t *texturePixels = static_cast<uint32_t *>(pixels); // Assuming SDL_PIXELFORMAT_RGBA8888
 
-	for (int simY = 0; simY < simHeight; simY++)
+	if (scaling == 1)
 	{
-		for (int simX = 0; simX < simWidth; simX++)
+		// Special case: no scaling, directly write into the texture
+		for (int simY = 0; simY < simHeight; simY++)
 		{
-			uint32_t color = colors[grid[simY * simWidth + simX]];
-			// Write directly into the texture, accounting for scaling
-			for (int dy = 0; dy < scaling; dy++)
+			for (int simX = 0; simX < simWidth; simX++)
 			{
-				for (int dx = 0; dx < scaling; dx++)
+				uint32_t color = colors[grid[simY * simWidth + simX]];
+				texturePixels[simY * simWidth + simX] = color;
+			}
+		}
+	}
+	else
+	{
+		// General case: handle scaling
+		for (int simY = 0; simY < simHeight; simY++)
+		{
+			for (int simX = 0; simX < simWidth; simX++)
+			{
+				uint32_t color = colors[grid[simY * simWidth + simX]];
+				// Write directly into the texture, accounting for scaling
+				for (int dy = 0; dy < scaling; dy++)
 				{
-					texturePixels[(simY * scaling + dy) * (simWidth * scaling) + (simX * scaling + dx)] = color;
+					for (int dx = 0; dx < scaling; dx++)
+					{
+						texturePixels[(simY * scaling + dy) * (simWidth * scaling) + (simX * scaling + dx)] = color;
+					}
 				}
 			}
 		}
@@ -343,13 +263,20 @@ static void updateUI(SDL_Texture &texture, int scaling, long long frame)
 	auto row = 2;
 	auto col = simWidth - 5;
 	auto dot = frame % 3;
-
-	for (int dy = 0; dy < scaling; dy++)
+	if (scaling != 1)
 	{
-		for (int dx = 0; dx < scaling; dx++)
+		for (int dy = 0; dy < scaling; dy++)
 		{
-			pixel_data[(row * scaling + dy) * (simWidth * scaling) + (col * scaling + dx) + (dot * scaling)] = 0xFFFFFFFF;
+			for (int dx = 0; dx < scaling; dx++)
+			{
+				pixel_data[(row * scaling + dy) * (simWidth * scaling) + (col * scaling + dx) + (dot * scaling)] = 0xFFFFFFFF;
+			}
 		}
+	}
+	else
+	{
+		// no need to scale, just loop normally
+		pixel_data[row * simWidth + col + dot] = 0xFFFFFFFF;
 	}
 
 	SDL_UnlockTexture(&texture);

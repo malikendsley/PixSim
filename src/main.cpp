@@ -121,13 +121,12 @@ int main(int argc, char *argv[])
 				switch (tileTypeBuffer[idx])
 				{
 				case sand:
-					simulateFalling(x, y, tileTypeBuffer, flowBuffer, simWidth, simHeight);
+					simulateFalling(x, y, tileTypeBuffer, simWidth, simHeight);
 					break;
 				case water:
 					simulateFlowing(x, y, tileTypeBuffer, flowBuffer, processedBuffer, simWidth, simHeight);
 					break;
 				case gas:
-					// simulateFlowing(x, y, tileTypeBuffer, flowBuffer, tileTypeBuffer, simWidth, simHeight);
 					break;
 				}
 			}

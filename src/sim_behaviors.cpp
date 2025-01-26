@@ -3,7 +3,7 @@
 #include "sim_behaviors.h"
 
 // Right now sand's only behavior is to fall, but later on, we will have different types of particles
-void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, std::unique_ptr<int[]> &_, int width, int height)
+void simulateFalling(int x, int y, std::unique_ptr<int[]> &grid, int width, int height)
 {
     // Sand collides with the bottom of the screen
     if (y == height - 1)

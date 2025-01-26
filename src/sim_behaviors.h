@@ -5,5 +5,9 @@
 
 // Function declarations (TODO: Fix this later)
 
-void simulateFalling(int x, int y, std::unique_ptr<int[]> &sim, int width, int height);
-void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer, std::unique_ptr<int[]> &flowBuffer, std::unique_ptr<int[]> &finishedBuffer, int width, int height);
+void simulateFalling(int x, int y, std::unique_ptr<int[]> &sim, int width,
+                     int height);
+void simulateFlowing(int x, int y, std::unique_ptr<int[]> &tileBuffer,
+                     std::unique_ptr<int[]> &flowBuffer,
+                     std::unique_ptr<int[]> &finishedBuffer, int width,
+                     int height);

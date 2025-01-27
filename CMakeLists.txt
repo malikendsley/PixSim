@@ -13,12 +13,12 @@ endif()
 find_package(SDL2 REQUIRED PATHS "C:/cpplibs/SDL2")
 find_package(SDL2_mixer REQUIRED PATHS "C:/cpplibs/SDL2_mixer-2.8.0")
 
-
 set(SOURCE_DIR ${CMAKE_SOURCE_DIR}/src)
 file(GLOB_RECURSE SOURCES ${SOURCE_DIR}/*.cpp)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
+# Default to Debug build type if none is set
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Choose the build type (Debug, Release, etc.)" FORCE)
 endif()
@@ -37,11 +37,27 @@ set_target_properties(PixSim PROPERTIES
     CXX_STANDARD 17
 )
 
-# Pass linker flags to set the subsystem to Windows
-target_link_options(PixSim PRIVATE
-    "/subsystem:windows"
-)
-
+# Configure build flags based on build type
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(PixSim PRIVATE
+        -g                       # Include debug symbols
+        -Og                      # Optimize for debugging
+        -Wall -Wextra -Wpedantic # Enable warnings
+    )
+    target_link_options(PixSim PRIVATE
+        -g                       # Retain debug information in the linker stage
+    )
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_compile_options(PixSim PRIVATE
+        -O3                      # Aggressive optimizations
+        -DNDEBUG                 # Disable assertions
+        -march=native            # Optimize for the current CPU architecture
+        -Wall -Wextra -Wpedantic # Enable warnings
+    )
+    target_link_options(PixSim PRIVATE
+        -O3                      # Aggressive optimizations in the linker stage
+    )
+endif()
 
 # Copy DLLs and assets to the bin directory
 add_custom_command(TARGET PixSim POST_BUILD

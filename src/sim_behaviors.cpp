@@ -2,6 +2,7 @@
 
 #include "grid.h"
 #include "sim_behaviors.h"
+#include "util.h"
 
 // Simulate sand falling in the IntGrid
 void simulateFalling(int x, int y, Grid &grid) {
@@ -16,8 +17,7 @@ void simulateFalling(int x, int y, Grid &grid) {
   }
   // Sand can only move diagonally if the sides are empty
   else {
-    int dir =
-        rand() % 2 == 0 ? -1 : 1; // Randomly choose left (-1) or right (+1)
+    int dir = fastRand() == 1 ? -1 : 1;
 
     // Check the chosen direction
     if (x + dir >= 0 && x + dir < grid.width && grid(x + dir, y + 1) == 0 &&
@@ -37,43 +37,83 @@ void simulateFalling(int x, int y, Grid &grid) {
   }
 }
 
-// Flowing can be handled in the same pass as every other particle
-// Assumes the coordinates contain flowable particle
-void simulateFlowing(int x, int y, Grid &tileBuffer, Grid &flowBuffer,
-                     Grid &finishedBuffer) {
+void simulateFlowing(int x, int y, Grid &tileBuffer, Grid &finishedBuffer) {
   int tileType = tileBuffer(x, y);
 
-  // Below and x+-1
-  if (y + 1 < tileBuffer.height && tileBuffer(x, y + 1) == 0) {
+  // Check if we can flow down
+  if (tileBuffer.checkBounds(x, y + 1) && tileBuffer(x, y + 1) == 0) {
     tileBuffer(x, y) = 0;
     tileBuffer(x, y + 1) = tileType;
+    finishedBuffer(x, y + 1) = 1;
     return;
   }
-  // Randomly decide the diagonal direction (-1 or 1)
-  int rand = std::rand() % 2 == 0 ? -1 : 1;
 
-  // Check diagonal (down-left or down-right)
-  if (y + 1 < tileBuffer.height && x + rand >= 0 &&
-      x + rand < tileBuffer.width && tileBuffer(x + rand, y + 1) == 0) {
+  int rand = (fastRand() % 2 == 0 ? -1 : 1);
+
+  // Check if we can flow down-left/down-right
+  if (tileBuffer.checkBounds(x + rand, y + 1) &&
+      tileBuffer(x + rand, y + 1) == 0) {
     tileBuffer(x, y) = 0;
     tileBuffer(x + rand, y + 1) = tileType;
+    finishedBuffer(x + rand, y + 1) = 1;
     return;
   }
 
-  // Check the opposite diagonal
-  if (y + 1 < tileBuffer.height && x - rand >= 0 &&
-      x - rand < tileBuffer.width && tileBuffer(x - rand, y + 1) == 0) {
+  if (tileBuffer.checkBounds(x - rand, y + 1) &&
+      tileBuffer(x - rand, y + 1) == 0) {
     tileBuffer(x, y) = 0;
     tileBuffer(x - rand, y + 1) = tileType;
+    finishedBuffer(x - rand, y + 1) = 1;
     return;
   }
 
-  // If we can't flow down, try to move sideways
-  rand = std::rand() % 2 == 0 ? -1 : 1;
-  if (x + rand >= 0 && x + rand < tileBuffer.width &&
-      tileBuffer(x + rand, y) == 0) {
-    tileBuffer(x, y) = 0;
-    tileBuffer(x + rand, y) = tileType;
-    return;
+  //
+  // First sideways pass
+  //
+  rand = (fastRand() % 2 == 0 ? -1 : 1); // randomly choose a direction
+  {
+    int check = 1;
+    // Move sideways until hitting an obstacle or going OOB
+    while (tileBuffer.checkBounds(x + rand * check, y) &&
+           tileBuffer(x + rand * check, y) == 0) {
+      check++;
+    }
+
+    // If we moved at least one cell
+    if (check > 1) {
+      int finalX = x + rand * (check - 1);
+      // Double-check finalX is still in bounds
+      if (tileBuffer.checkBounds(finalX, y)) {
+        tileBuffer(x, y) = 0;
+        tileBuffer(finalX, y) = tileType;
+        finishedBuffer(finalX, y) = 1;
+      }
+      return;
+    }
   }
+
+  //
+  // Second sideways pass in the opposite direction
+  //
+  rand = -rand; // Reverse direction
+  {
+    int check = 1;
+    while (tileBuffer.checkBounds(x + rand * check, y) &&
+           tileBuffer(x + rand * check, y) == 0) {
+      check++;
+    }
+
+    if (check > 1) {
+      int finalX = x + rand * (check - 1);
+      if (tileBuffer.checkBounds(finalX, y)) {
+        tileBuffer(x, y) = 0;
+        tileBuffer(finalX, y) = tileType;
+        finishedBuffer(finalX, y) = 1;
+      }
+      return;
+    }
+  }
+
+  // If we can't move down or sideways, do nothing
+  return;
 }

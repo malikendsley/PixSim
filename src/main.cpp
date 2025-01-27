@@ -1,12 +1,12 @@
 #include <SDL.h>
 #include <SDL_mixer.h>
 #include <iostream>
-#include <memory>
 #include <vector>
 
 #include "grid.h"
 #include "input.h"
 #include "sim_behaviors.h"
+#include "util.h"
 
 constexpr size_t simScale = 1; // "pixels" per sim grain. This is handled as
                                // simulation then integer scaling.
@@ -17,14 +17,14 @@ constexpr size_t windowWidth = 800;
 // height and width
 constexpr int simHeight = windowHeight / simScale;
 constexpr int simWidth = windowWidth / simScale;
-constexpr int approxTargetFPS = 0;
+constexpr int approxTargetFPS = 144;
 
 static void draw(SDL_Texture &texture, Grid &sim, int scaling, int simWidth,
                  int simHeight);
 static void updateUI(SDL_Texture &texture, int scaling, long long frame);
-static inline int idx(int x, int y, int width);
 
-int main(int argc, char *argv[]) {
+// Suppress unused warnings
+int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
 
   SDL_InitSubSystem(SDL_INIT_EVERYTHING);
   if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
@@ -54,7 +54,6 @@ int main(int argc, char *argv[]) {
   auto processedBuffer = Grid(simWidth, simHeight);
 
   bool running = true;
-  auto lastTime = SDL_GetPerformanceCounter();
   auto simTick = 0;
 
   enum simTile {
@@ -72,11 +71,22 @@ int main(int argc, char *argv[]) {
       running = false;
     }
     if (input.lmb) {
-      // spawn the held tile at the mouse position (currently just sand)
-      if (input.mouseX >= 0 && input.mouseX < windowWidth &&
-          input.mouseY >= 0 && input.mouseY < windowHeight) {
-        tileTypeBuffer(input.mouseX / simScale, input.mouseY / simScale) =
-            currentTile;
+      auto grid = randomGrid(20, 20, currentTile);
+
+      // Align grid to mouse click and add it to the simulation
+      for (int y = 0; y < grid.height; y++) {
+        for (int x = 0; x < grid.width; x++) {
+          if (grid(x, y) != 0) {
+            int tileX = input.mouseX / simScale + x;
+            int tileY = input.mouseY / simScale + y;
+
+            // Check bounds before accessing tileTypeBuffer
+            if (tileX >= 0 && tileX < tileTypeBuffer.width && tileY >= 0 &&
+                tileY < tileTypeBuffer.height) {
+              tileTypeBuffer(tileX, tileY) = grid(x, y);
+            }
+          }
+        }
       }
     }
 
@@ -121,7 +131,8 @@ int main(int argc, char *argv[]) {
           simulateFalling(x, y, tileTypeBuffer);
           break;
         case water:
-          simulateFlowing(x, y, tileTypeBuffer, flowBuffer, processedBuffer);
+          // TODO: Flowbuffer
+          simulateFlowing(x, y, tileTypeBuffer, processedBuffer);
           break;
         case gas:
           break;
@@ -147,50 +158,52 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-// Water is unique in that it has to flow and settle
-// Volume preservation
-static void volumePreservation(std::unique_ptr<int[]> &tileBuffer,
-                               std::unique_ptr<int[]> &flowBuffer, int width,
-                               int height, int tileType) {
-  // NOTE: i think that later, i will handle each body of water as a separate
-  // entity (with some way to altenatively handle small bits of water)
-  //  For now, I will handle all water in the chunk in one pass
+// // Water is unique in that it has to flow and settle
+// // Volume preservation
+// static void volumePreservation(std::unique_ptr<int[]> &tileBuffer,
+//                                std::unique_ptr<int[]> &flowBuffer, int width,
+//                                int height, int tileType) {
+//   // NOTE: i think that later, i will handle each body of water as a separate
+//   // entity (with some way to altenatively handle small bits of water)
+//   //  For now, I will handle all water in the chunk in one pass
 
-  // The flow buffer is the same size as the tile buffer, implicitly encoding
-  // the position of excess water and making the amount the value For all water
-  // tiles, if flowBuffer[x, y] > 0, move the water to the nearest empty tile
-  // with a lower pressure (value in tileBuffer) Prioritizing closest and
-  // downwards bias should give the most natural looking flow
-  for (int y = 0; y < height; y++) {
-    // x on the inner loop to improve cache locality
-    for (int x = 0; x < width; x++) {
-      if (tileBuffer[y * width + x] == tileType &&
-          flowBuffer[y * width + x] > 0) {
-        // Find the nearest empty tile with a lower pressure
-        // Start with the tile below
-        if (y + 1 < height && tileBuffer[(y + 1) * width + x] == 0) {
-          tileBuffer[y * width + x] = 0;
-          tileBuffer[(y + 1) * width + x] = tileType;
-          flowBuffer[y * width + x]--;
-          flowBuffer[(y + 1) * width + x]++;
-        } else {
-          // If the tile below is occupied, check the sides
-          if (x - 1 >= 0 && tileBuffer[y * width + x - 1] == 0) {
-            tileBuffer[y * width + x] = 0;
-            tileBuffer[y * width + x - 1] = tileType;
-            flowBuffer[y * width + x]--;
-            flowBuffer[y * width + x - 1]++;
-          } else if (x + 1 < width && tileBuffer[y * width + x + 1] == 0) {
-            tileBuffer[y * width + x] = 0;
-            tileBuffer[y * width + x + 1] = tileType;
-            flowBuffer[y * width + x]--;
-            flowBuffer[y * width + x + 1]++;
-          }
-        }
-      }
-    }
-  }
-}
+//   // The flow buffer is the same size as the tile buffer, implicitly encoding
+//   // the position of excess water and making the amount the value For all
+//   // water tiles, if flowBuffer[x, y] > 0, move the water to the nearest
+//   empty
+//   // tile with a lower pressure (value in tileBuffer) Prioritizing closest
+//   and
+//   // downwards bias should give the most natural looking flow
+//   for (int y = 0; y < height; y++) {
+//     // x on the inner loop to improve cache locality
+//     for (int x = 0; x < width; x++) {
+//       if (tileBuffer[y * width + x] == tileType &&
+//           flowBuffer[y * width + x] > 0) {
+//         // Find the nearest empty tile with a lower pressure
+//         // Start with the tile below
+//         if (y + 1 < height && tileBuffer[(y + 1) * width + x] == 0) {
+//           tileBuffer[y * width + x] = 0;
+//           tileBuffer[(y + 1) * width + x] = tileType;
+//           flowBuffer[y * width + x]--;
+//           flowBuffer[(y + 1) * width + x]++;
+//         } else {
+//           // If the tile below is occupied, check the sides
+//           if (x - 1 >= 0 && tileBuffer[y * width + x - 1] == 0) {
+//             tileBuffer[y * width + x] = 0;
+//             tileBuffer[y * width + x - 1] = tileType;
+//             flowBuffer[y * width + x]--;
+//             flowBuffer[y * width + x - 1]++;
+//           } else if (x + 1 < width && tileBuffer[y * width + x + 1] == 0) {
+//             tileBuffer[y * width + x] = 0;
+//             tileBuffer[y * width + x + 1] = tileType;
+//             flowBuffer[y * width + x]--;
+//             flowBuffer[y * width + x + 1]++;
+//           }
+//         }
+//       }
+//     }
+//   }
+// }
 
 auto colors = std::vector<uint32_t>{
     0x00000000, // Air
@@ -262,5 +275,3 @@ static void updateUI(SDL_Texture &texture, int scaling, long long frame) {
 
   SDL_UnlockTexture(&texture);
 }
-
-static inline int idx(int x, int y, int width) { return y * width + x; }

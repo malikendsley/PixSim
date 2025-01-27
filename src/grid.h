@@ -14,9 +14,20 @@ public:
     return data[static_cast<size_t>(y) * width + x];
   }
 
+  Grid &operator*=(int scalar) {
+    for (auto &value : data) {
+      value *= scalar;
+    }
+    return *this;
+  }
+
+  bool checkBounds(int x, int y) const {
+    return x >= 0 && x < width && y >= 0 && y < height;
+  }
+
   void clear() { data.assign(width * height, 0); }
 
-  int width;
-  int height;
+  const int width;
+  const int height;
   std::vector<int> data;
 };

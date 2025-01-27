@@ -1,9 +1,10 @@
-#include <memory>
+#pragma once
 
-class IntGrid {
+#include <vector>
+
+class Grid {
 public:
-  IntGrid(int w, int h)
-      : width(w), height(h), data(std::make_unique<int[]>(w * h)) {}
+  Grid(int w, int h) : width(w), height(h), data(std::vector<int>(w * h)) {}
 
   int &operator()(int x, int y) {
     return data[static_cast<size_t>(y) * width + x];
@@ -13,7 +14,9 @@ public:
     return data[static_cast<size_t>(y) * width + x];
   }
 
+  void clear() { data.assign(width * height, 0); }
+
   int width;
   int height;
-  std::unique_ptr<int[]> data;
+  std::vector<int> data;
 };

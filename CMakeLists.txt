@@ -39,7 +39,7 @@ set_target_properties(PixSim PROPERTIES
 
 # Pass linker flags to set the subsystem to Windows
 target_link_options(PixSim PRIVATE
-    "-Xlinker" "/subsystem:windows"
+    "/subsystem:windows"
 )
 
 

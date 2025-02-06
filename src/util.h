@@ -12,11 +12,15 @@ inline int fastRand() {
   return distribution(generator);
 }
 
-inline Grid randomGrid(int width, int height, int value) {
-  auto grid = Grid(width, height);
+inline Chunk randomGrid(int width, int height, int value) {
+  auto grid = Chunk(width, height);
   for (int y = 0; y < height; y++) {
     for (int x = 0; x < width; x++) {
-      grid(x, y) = fastRand() == 1 ? 1 : 0;
+      // Access the tuple returned by operator()
+      const auto &cell = grid(x, y);
+
+      // Set the first value in the tuple (ids[idx])
+      std::get<0>(cell) = fastRand() == 1 ? 1 : 0;
     }
   }
 

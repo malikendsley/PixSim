@@ -17,9 +17,9 @@ constexpr size_t windowWidth = 800;
 // height and width
 constexpr int simHeight = windowHeight / simScale;
 constexpr int simWidth = windowWidth / simScale;
-constexpr int approxTargetFPS = 144;
+constexpr int approxTargetFPS = 20;
 
-static void draw(SDL_Texture &texture, Grid &sim, int scaling, int simWidth,
+static void draw(SDL_Texture &texture, Chunk &sim, int scaling, int simWidth,
                  int simHeight);
 static void updateUI(SDL_Texture &texture, int scaling, long long frame);
 
@@ -46,12 +46,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
 
   // Entries here correspond to what tile is at each position in the simulation
   // grid
-  auto tileTypeBuffer = Grid(simWidth, simHeight);
+  auto tileTypeBuffer = Chunk(simWidth, simHeight);
   // Entries here correspond to the flow of each tile in the simulation grid
-  auto flowBuffer = Grid(simWidth, simHeight);
+  auto flowBuffer = Chunk(simWidth, simHeight);
   // This buffer indicates which tiles have already been processed in the
   // current frame
-  auto processedBuffer = Grid(simWidth, simHeight);
+  auto processedBuffer = std::vector<int>(simWidth * simHeight, 0);
 
   bool running = true;
   auto simTick = 0;
@@ -76,7 +76,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
       // Align grid to mouse click and add it to the simulation
       for (int y = 0; y < grid.height; y++) {
         for (int x = 0; x < grid.width; x++) {
-          if (grid(x, y) != 0) {
+          if (grid.getId(x, y) != 0) {
             int tileX = input.mouseX / simScale + x;
             int tileY = input.mouseY / simScale + y;
 
@@ -126,7 +126,7 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char *argv[]) {
     for (int y = simHeight - 1; y >= 0; y--) {
       for (int x = 0; x < simWidth; x++) {
 
-        switch (tileTypeBuffer(x, y)) {
+        switch (tileTypeBuffer.getId(x, y)) {
         case sand:
           simulateFalling(x, y, tileTypeBuffer);
           break;
@@ -213,7 +213,7 @@ auto colors = std::vector<uint32_t>{
     0x00FF00FF, // Gas
 };
 
-static void draw(SDL_Texture &texture, Grid &grid, int scaling, int simWidth,
+static void draw(SDL_Texture &texture, Chunk &grid, int scaling, int simWidth,
                  int simHeight) {
   void *pixels;
   int pitch;
@@ -227,7 +227,7 @@ static void draw(SDL_Texture &texture, Grid &grid, int scaling, int simWidth,
     // Special case: no scaling, directly write into the texture
     for (int simY = 0; simY < simHeight; simY++) {
       for (int simX = 0; simX < simWidth; simX++) {
-        uint32_t color = colors[grid(simX, simY)];
+        uint32_t color = colors[grid.getId(simX, simY)];
         texturePixels[simY * simWidth + simX] = color;
       }
     }
@@ -235,7 +235,7 @@ static void draw(SDL_Texture &texture, Grid &grid, int scaling, int simWidth,
     // General case: handle scaling
     for (int simY = 0; simY < simHeight; simY++) {
       for (int simX = 0; simX < simWidth; simX++) {
-        uint32_t color = colors[grid(simX, simY)];
+        uint32_t color = colors[grid.getId(simX, simY)];
         // Write directly into the texture, accounting for scaling
         for (int dy = 0; dy < scaling; dy++) {
           for (int dx = 0; dx < scaling; dx++) {

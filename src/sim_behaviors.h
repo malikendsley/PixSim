@@ -6,5 +6,5 @@
 
 // Function declarations (TODO: Fix this later)
 
-void simulateFalling(int x, int y, Grid &grid);
-void simulateFlowing(int x, int y, Grid &tileBuffer, Grid &finishedBuffer);
+void simulateFalling(int x, int y, Chunk &grid);
+void simulateFlowing(int x, int y, Chunk &tileBuffer, std::vector<int> &finishedBuffer);
